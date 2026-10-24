@@ -1,0 +1,168 @@
+---
+title: "EDS 223 Homework 2"
+subtitle: "Exploring patterns of environmental justice"
+author: "Liam Sarmiento"
+date: 2026-10-22
+format:
+    pdf:
+        toc: true
+---
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE)
+```
+
+# Part 1: Legacy of redlining in current environmental (in)justice
+
+## Load Packages and Source Functions
+
+```{r}
+library(sf)
+library(tmap)
+library(tidyverse)
+library(spData)
+library(stars)
+library(here)
+library(bit64)
+
+install.packages("sf")
+install.packages("stars")
+install.packages("tmap")
+```
+
+## Import Data
+
+```{r}
+#Import HOLC data as LA_Inequality
+LA_Inequality <- sf::st_read(here::here("data", "mapping-inequality","mapping-inequality-los-angeles.json"))
+
+#Import ej screen for LA inequalities
+ejscreen <- sf::st_read(here::here("data", "ejscreen","EJSCREEN_2023_BG_StatePct_with_AS_CNMI_GU_VI.gdb"))
+
+california <- ejscreen %>%
+  dplyr::filter(ST_ABBREV == "CA")
+
+los_angeles <- ejscreen %>%
+  dplyr::filter(CNTY_NAME %in% c("Los Angeles County"))
+```
+
+Data wrangle LA inequalities and HOLC grade map
+```{r}
+#Transform LA_Inequality to same crs as los_angeles
+Inequality_transform <- st_transform(LA_Inequality, crs = st_crs(los_angeles))
+
+#Combine LA_Inequality with los_angeles
+Combined_LA <- st_join(los_angeles, Inequality_transform, left = TRUE)
+```
+
+Map of historical redlining neighborhoods
+```{r}
+tm_shape(Combined_LA,bbox = LA_Inequality) +
+    tm_polygons(fill="grade",
+    fill.scale = tm_scale(values = c("burlywood4", "lightsalmon2", "brown3","brown4","honeydew3")),
+    fill.legend = tm_legend(title = "Redlining Grade")
+    )
+```
+
+Create percentage summary table of each HOLC block
+```{r}
+#Replace na values with NoGrade
+Combined_LA <- Combined_LA |> replace_na(list(grade = "NoGrade"))
+
+#Create table
+PercentTable <- Combined_LA |>
+  count(grade) |> 
+  st_drop_geometry()
+
+PercentTable <- PercentTable |> 
+  mutate(n = (100*(n/sum(PercentTable$n)))) |> 
+  rename(Percent = n)
+
+PercentTable
+```
+
+Low percent income and Percentile Particulate Matter 2.5 within HOLC grades
+```{r}
+OnlyHOLC <- st_join(Inequality_transform, los_angeles, left = TRUE)
+
+LI_and_PM_table <- OnlyHOLC %>%
+  group_by(grade) %>%
+  summarize(LowIncomePercent = mean(LOWINCPCT),
+            PercentilePM2.5 = mean(P_PM25)) %>%
+  st_drop_geometry()
+
+LI_and_PM_table <- LI_and_PM_table |> 
+  mutate(LowIncomePercent = LowIncomePercent*100)
+
+LI_and_PM_table <- LI_and_PM_table |>
+  pivot_longer(!grade, names_to = "Measure", values_to = "Percentile")
+
+ggplot(LI_and_PM_table, aes(fill=Measure, y=Percentile, x=grade)) + 
+    geom_bar(position="dodge", stat="identity")
+```
+
+- Result reflection -
+
+Towards the southeast, there seems to higher percentile of particulate matter 2.5, which seems to be generally correlated with a higher redlining grade. Similarly, percent low income also seems to increase as redlining grade goes up. The redlining of these areas may be causational of their low income and particulate matter pollution status.
+
+# Part 2: Legacy of redlining in pedstrian and bike accidents
+
+## Load data
+
+```{r}
+Crashes_raw <- st_read(here::here("data", "SWITRS_LA","Crashes.csv"))
+```
+
+## Data wrangle of percent bike or pedestrian crashes in each HOLC region
+```{r}
+#Filter pedestrian or bicycle accidents
+Crashes_peds_bikes <- Crashes_raw |>
+  filter(PEDESTRIAN_ACCIDENT == "Y" | BICYCLE_ACCIDENT == "Y") |> 
+  filter(POINT_X != 'NA')
+
+# Which columsn have more NA's
+sum((Crashes_raw$POINT_X == 'NA'))
+sum((Crashes_raw$LATITUDE == 'NA'))
+
+# We'll use xy
+
+#Convert X and Y columns to points, using WGS 84, or code 4326
+Crash_pb_trans <- st_as_sf(Crashes_peds_bikes, coords = c("POINT_X", "POINT_Y"), crs = 4326)
+
+#Check CRS is correct
+st_crs(Crash_pb_trans)
+
+#Transform crash dots to HOLC map CRS
+st_crs(Crash_pb_trans) == st_crs(OnlyHOLC)
+Crash_trans_correct <- st_transform(Crash_pb_trans, crs = st_crs(OnlyHOLC))
+
+# Subset points only within HOLC regions
+HOLC_Crashes <- Crash_trans_correct[OnlyHOLC, ]
+
+#Left join 
+Crashes_left_join <- st_join(HOLC_Crashes, OnlyHOLC) %>%
+  select(id = ID, region = grade)
+
+# Summarise HOLC grades with most crashes
+Crashes_Table <- Crashes_left_join %>%
+  filter(!is.na(region)) |> 
+  group_by(region) %>%
+  summarise(n_points = n()) %>%
+  st_drop_geometry()
+
+Crashes_percent <- Crashes_Table |> 
+  mutate(Percentage = 100*(n_points/sum(Crashes_Table$n_points)))
+Crashes_percent$region <- as.factor(Crashes_percent$region)
+Crashes_percent$Percentage <- as.double(Crashes_percent$Percentage)
+
+Crashes_percent
+```
+
+## Visualize data
+```{r}
+ggplot(Crashes_percent, aes(x = region, y = Percentage, fill = region)) +
+  geom_bar(stat = "identity") +
+  labs(x = "HOLC region", y = "% of bike and pedestrian crashes") +
+  theme_minimal()
+```

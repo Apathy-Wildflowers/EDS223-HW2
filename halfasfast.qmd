@@ -1,0 +1,12 @@
+
+```{r}
+library(sf)
+library(tmap)
+library(tidyverse)
+library(spData)
+```
+
+
+```{r}
+nz_height
+```
