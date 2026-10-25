@@ -40,10 +40,10 @@ LA_Inequality <- sf::st_read(here::here("data", "mapping-inequality","mapping-in
 #Import ej screen for LA inequalities
 ejscreen <- sf::st_read(here::here("data", "ejscreen","EJSCREEN_2023_BG_StatePct_with_AS_CNMI_GU_VI.gdb"))
 
-california <- ejscreen %>%
+california <- ejscreen |>
   dplyr::filter(ST_ABBREV == "CA")
 
-los_angeles <- ejscreen %>%
+los_angeles <- ejscreen |>
   dplyr::filter(CNTY_NAME %in% c("Los Angeles County"))
 ```
 
@@ -86,10 +86,10 @@ Low percent income and Percentile Particulate Matter 2.5 within HOLC grades
 ```{r}
 OnlyHOLC <- st_join(Inequality_transform, los_angeles, left = TRUE)
 
-LI_and_PM_table <- OnlyHOLC %>%
-  group_by(grade) %>%
+LI_and_PM_table <- OnlyHOLC |>
+  group_by(grade) |>
   summarize(LowIncomePercent = mean(LOWINCPCT),
-            PercentilePM2.5 = mean(P_PM25)) %>%
+            PercentilePM2.5 = mean(P_PM25)) |>
   st_drop_geometry()
 
 LI_and_PM_table <- LI_and_PM_table |> 
@@ -141,14 +141,14 @@ Crash_trans_correct <- st_transform(Crash_pb_trans, crs = st_crs(OnlyHOLC))
 HOLC_Crashes <- Crash_trans_correct[OnlyHOLC, ]
 
 #Left join 
-Crashes_left_join <- st_join(HOLC_Crashes, OnlyHOLC) %>%
+Crashes_left_join <- st_join(HOLC_Crashes, OnlyHOLC) |>
   select(id = ID, region = grade)
 
 # Summarise HOLC grades with most crashes
-Crashes_Table <- Crashes_left_join %>%
+Crashes_Table <- Crashes_left_join |>
   filter(!is.na(region)) |> 
   group_by(region) %>%
-  summarise(n_points = n()) %>%
+  summarise(n_points = n()) |>
   st_drop_geometry()
 
 Crashes_percent <- Crashes_Table |> 
